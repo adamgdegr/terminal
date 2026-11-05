@@ -7,6 +7,7 @@
     "start": "python3 -m http.server ${PORT:-5173} --directory dist",
     "check": "node --check dist/terminal.js && node --check dist/content.js && node --check dist/theme.js && node --check dist/markdown.js && node --check dist/analytics.js",
     "test": "node --test tests/theme.test.cjs",
-    "test:e2e": "node --test tests/browser.test.cjs"
+    "test:e2e": "node --test tests/browser.test.cjs",
+    "deploy": "npm run check && npm test && npx wrangler deploy"
   }
 }

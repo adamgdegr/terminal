@@ -2,3 +2,6 @@
 .openai
 tests/artifacts
 superbot.app.json
+.claude
+.wrangler
+.dev.vars*
