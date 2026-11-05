@@ -6,5 +6,12 @@
   "preview_urls": true,
   "routes": [
     { "pattern": "adamgd.dev", "custom_domain": true }
-  ]
+  ],
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "persist": true
+    }
+  }
 }
