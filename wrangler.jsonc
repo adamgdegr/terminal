@@ -1,5 +1,5 @@
 {
-  "name": "adamgd-dev",
+  "name": "terminal",
   "compatibility_date": "2026-11-05",
   "assets": { "directory": "./dist" },
   "workers_dev": true,
