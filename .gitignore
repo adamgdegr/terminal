@@ -1,0 +1,4 @@
+.idea
+.openai
+tests/artifacts
+superbot.app.json

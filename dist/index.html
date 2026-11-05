@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adam Garza</title>
+<meta name="description" content="Adam Garza's little corner of the internet. Projects, notes, and links, through a Catppuccin terminal.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" type="image/png" sizes="160x160" href="favicon.png">
+<link rel="apple-touch-icon" href="favicon.png">
+<meta name="theme-color" content="#eff1f5">
+<script src="theme.js"></script>
+<link rel="stylesheet" href="themes.css">
+<link rel="stylesheet" href="style.css">
+<script src="analytics.js" defer></script><script src="content.js" defer></script><script src="markdown.js" defer></script><script src="terminal.js" defer></script>
+</head>
+<body>
+<main>
+<div class="terminal" aria-label="Personal website terminal">
+<div class="terminal-body" id="terminal-body">
+<section id="welcome" aria-label="Welcome message">
+<div class="bootline"><span class="green">✓</span> Connection established. Make yourself at home.</div>
+<div class="intro"><pre class="ascii" aria-hidden="true">     /\_/\
+    ( o.o )
+     &gt; ^ &lt;</pre><div><h1>Howdy, I'm Adam<span class="green">.</span></h1><p>Software developer. Security enthusiast. Semi-professional.</p><p class="muted">Welcome to my personal terminal.</p></div></div>
+<div class="motd"><span class="mauve">motd</span><p>I build things, break things, and write about what I learn.<br>Have a look around. There's no wrong command to try.</p></div>
+<p class="getting-started">Type <code>help</code> and press Enter to explore. Tab completes commands; ↑ / ↓ browse history.</p>
+</section>
+<div id="output" role="log" aria-live="polite" aria-relevant="additions"></div>
+<form id="command-form" autocomplete="off"><label for="command-input"><span class="green">visitor</span><span class="muted">@</span><span class="blue">adamgdegr</span><span class="muted">:~</span><span class="prompt-symbol">❯</span></label><span class="command-field"><input id="command-input" name="command" aria-label="Terminal command" spellcheck="false" autocapitalize="off" autocomplete="off" autofocus><span id="typing-layer" aria-hidden="true"></span></span><button class="run" type="submit" aria-label="Run command">↵</button></form>
+<div id="suggestions" aria-live="polite"></div>
+</div>
+<div class="statusbar"><span><span class="status-dot"></span> session: local</span><span id="theme-status">catppuccin / system</span><span class="encoding">UTF-8</span></div>
+</div>
+</main>
+
+</body>
+</html>

@@ -1,0 +1,84 @@
+/* Catppuccin: https://github.com/catppuccin/palette
+   Latte green and blue are darkened for readable small text. */
+:root, :root[data-theme="latte"] {
+  color-scheme: light;
+  --base: #eff1f5;
+  --mantle: #e6e9ef;
+  --crust: #dce0e8;
+  --text: #4c4f69;
+  --muted: #5c5f77;
+  --green: #38732b;
+  --blue: #1b5cdd;
+  --mauve: #8839ef;
+  --red: #d20f39;
+  --border: #ccd0da;
+  --scrollbar: #8c8fa1;
+  --selection: #ccd0da;
+}
+
+:root[data-theme="frappe"] {
+  color-scheme: dark;
+  --base: #303446;
+  --mantle: #292c3c;
+  --crust: #232634;
+  --text: #c6d0f5;
+  --muted: #b5bfe2;
+  --green: #a6d189;
+  --blue: #8caaee;
+  --mauve: #ca9ee6;
+  --red: #e78284;
+  --border: #51576d;
+  --scrollbar: #737994;
+  --selection: #414559;
+}
+
+:root[data-theme="macchiato"] {
+  color-scheme: dark;
+  --base: #24273a;
+  --mantle: #1e2030;
+  --crust: #181926;
+  --text: #cad3f5;
+  --muted: #b8c0e0;
+  --green: #a6da95;
+  --blue: #8aadf4;
+  --mauve: #c6a0f6;
+  --red: #ed8796;
+  --border: #494d64;
+  --scrollbar: #6e738d;
+  --selection: #363a4f;
+}
+
+:root[data-theme="mocha"] {
+  color-scheme: dark;
+  --base: #1e1e2e;
+  --mantle: #181825;
+  --crust: #11111b;
+  --text: #cdd6f4;
+  --muted: #bac2de;
+  --green: #a6e3a1;
+  --blue: #89b4fa;
+  --mauve: #cba6f7;
+  --red: #f38ba8;
+  --border: #45475a;
+  --scrollbar: #6c7086;
+  --selection: #313244;
+}
+
+/* Follow the device even before JavaScript loads, or if it is unavailable. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+  color-scheme: dark;
+  --base: #1e1e2e;
+  --mantle: #181825;
+  --crust: #11111b;
+  --text: #cdd6f4;
+  --muted: #bac2de;
+  --green: #a6e3a1;
+  --blue: #89b4fa;
+  --mauve: #cba6f7;
+  --red: #f38ba8;
+  --border: #45475a;
+  --scrollbar: #6c7086;
+  --selection: #313244;
+  }
+}
