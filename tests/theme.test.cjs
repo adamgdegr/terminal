@@ -743,3 +743,25 @@ test('link clicks report their label, destination and section, and analytics fai
   app.submit('about');
   assert.match(app.nodes['#output'].textContent, /Howdy/);
 });
+
+test('familiar shell aliases resolve to commands, with typo hints and Tab completion', async () => {
+  const app = terminal();
+  const out = () => app.nodes['#output'].textContent;
+  await app.submit('ls');
+  assert.match(out(), /A few places to go/);
+  await app.submit('dark');
+  assert.equal(app.theme.current(), 'mocha');
+  await app.submit('light');
+  assert.equal(app.theme.current(), 'latte');
+  await app.submit('hlep');
+  assert.match(out(), /Did you mean help\?/);
+  await app.submit('zzzzzz');
+  assert.doesNotMatch(out(), /Did you mean zzzzzz/);
+  const commands = app.analytics.filter(item => item.event === 'terminal_command').map(item => item.properties);
+  assert.deepEqual(commands.slice(0, 3).map(item => item.command), ['help', 'theme', 'theme']);
+  assert.equal(commands[0].alias, 'ls');
+  assert.equal(commands[1].argument, 'mocha');
+  assert.equal(commands[2].attempted, undefined);
+  app.input.value = 'cont'; app.key('Tab');
+  assert.equal(app.input.value, 'contact');
+});

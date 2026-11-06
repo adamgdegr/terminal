@@ -29,6 +29,31 @@ const history = [];
 let historyIndex = 0;
 let draft = '';
 const commands = {help:'Show available commands',about:'Meet Me',projects:'Explore what I build',blog:'Read notes and posts',socials:'Find me elsewhere',funding:'Support me and my work',motd:'Show the welcome message',clear:'Clear the terminal',date:'Show your local date',whoami:'Find out who you are',theme:'View or set the theme (system, latte, frappe, macchiato, mocha)'};
+// Familiar shell names map onto the commands above. A string is a plain alias; an array adds preset arguments.
+const aliases={ls:'help',ll:'help',dir:'help',man:'help',h:'help','?':'help','--help':'help','-h':'help',commands:'help',menu:'help',
+ me:'about',bio:'about',info:'about',whois:'about',finger:'about',
+ project:'projects',work:'projects',code:'projects',repos:'projects',portfolio:'projects',
+ posts:'blog',post:'blog',read:'blog',cat:'blog',less:'blog',notes:'blog',writing:'blog',
+ social:'socials',contact:'socials',links:'socials',connect:'socials',email:'socials',
+ support:'funding',sponsor:'funding',donate:'funding',tip:'funding',
+ welcome:'motd',banner:'motd',hello:'motd',hi:'motd',home:'motd',
+ cls:'clear',reset:'clear',c:'clear',
+ time:'date',now:'date',
+ id:'whoami',who:'whoami',w:'whoami',
+ themes:'theme',color:'theme',colors:'theme',colour:'theme',dark:['theme','mocha'],light:['theme','latte']};
+const aliasesFor=name=>Object.keys(aliases).filter(a=>(Array.isArray(aliases[a])?aliases[a][0]:aliases[a])===name&&!Array.isArray(aliases[a]));
+function resolveCommand(word,args){
+ if(Object.hasOwn(commands,word)) return {name:word,args,alias:undefined};
+ if(Object.hasOwn(aliases,word)){const target=aliases[word];const [name,...preset]=Array.isArray(target)?target:[target];return {name,args:preset.length?preset.concat(args):args,alias:word};}
+ return {name:word,args,alias:undefined};
+}
+// Suggest a close command (or alias) for a typo, using a small edit-distance check.
+function closestCommand(word){
+ const distance=(a,b)=>{const row=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){let prev=row[0];row[0]=i;for(let j=1;j<=b.length;j++){const tmp=row[j];row[j]=Math.min(row[j]+1,row[j-1]+1,prev+(a[i-1]===b[j-1]?0:1));prev=tmp;}}return row[b.length];};
+ const word32=word.slice(0,32);let best,bestScore=3;
+ Object.keys(commands).forEach(c=>{const d=distance(word32,c);if(d<bestScore||(d<=2&&d===bestScore&&!best)){best=c;bestScore=d;}});
+ return bestScore<=2&&bestScore<Math.max(word32.length,1)?best:undefined;
+}
 // Analytics is optional: terminalAnalytics may be missing, disabled or blocked.
 const loadedAt = Date.now();
 const entryCommands = new WeakMap();
@@ -179,11 +204,12 @@ async function renderPost(result, post) {
    return false;
  }
 }
-function trackCommand(name,args,source){
+function trackCommand(name,args,source,alias){
  const known=Object.hasOwn(commands,name);
  const properties={command:known?name:'unknown',source,argument_count:args.length,command_number:history.length,seconds_since_load:Math.round((Date.now()-loadedAt)/1000)};
  // Only the first word of an unknown command is kept, never its arguments.
  if(!known) properties.attempted=name.slice(0,32);
+ if(alias) properties.alias=alias;
  const query=args.join(' ');
  if(name==='theme' && args.length===1 && window.terminalTheme.options.includes(query.toLowerCase())) properties.argument=query.toLowerCase();
  if(name==='blog' && args.length) properties.argument=query==='--demo'?'--demo':/^\d{4}-\d{2}-\d{2}$/.test(query)?'date':'slug';
@@ -200,8 +226,8 @@ async function run(raw, source='typed'){
  closeBlogSelection();
  finishReading('command');
  history.push(value); historyIndex = history.length; draft = ''; input.value = ''; suggestions.textContent = '';
- const [command,...args] = value.split(/\s+/); const name = command.toLowerCase();
- trackCommand(name,args,source);
+ const [command,...typedArgs] = value.split(/\s+/); const {name,args,alias} = resolveCommand(command.toLowerCase(),typedArgs);
+ trackCommand(name,args,source,alias);
  if(name === 'clear'){clear(); input.focus({preventScroll:true}); return;}
  const entry=el('section',undefined,'entry'); entry.append(el('div','visitor@adamgdegr:~ ❯ ' + value,'echo')); const result=el('div',undefined,'result'); entry.append(result); output.append(entry);
  entryCommands.set(entry,Object.hasOwn(commands,name)?name:'unknown');
@@ -219,7 +245,7 @@ async function run(raw, source='typed'){
  };
  const heading = text => result.append(el('h2',text));
  switch(name){
- case 'help': heading('A few places to go'); {const dl=el('dl'); Object.entries(commands).forEach(([cmd,desc])=>{const dt=el('dt'); dt.append(el('code',cmd)); dl.append(dt,el('dd',desc));}); result.append(dl); paragraph(result,'Use ↑ / ↓ for history, Tab to complete, or Ctrl L to clear.','muted');} break;
+ case 'help': heading('A few places to go'); {const dl=el('dl'); Object.entries(commands).forEach(([cmd,desc])=>{const dt=el('dt'); dt.append(el('code',cmd)); const dd=el('dd',desc); const names=aliasesFor(cmd); if(names.length) dd.append(el('span',' · also: '+names.slice(0,4).join(', '),'muted')); dl.append(dt,dd);}); result.append(dl); paragraph(result,'Shell habits work too: ls lists these commands, cat SLUG reads a post, dark and light switch themes.','muted'); paragraph(result,'Use ↑ / ↓ for history, Tab to complete, or Ctrl L to clear.','muted');} break;
  case 'about': heading('Howdy, I’m ' + SITE.name + '.'); paragraph(result,SITE.bio); paragraph(result,'Based in ' + SITE.location + '.'); paragraph(result,'Certified: ' + SITE.certifications.join(', ')); paragraph(result,'Currently studying: ' + SITE.studying.join(', ') + '.'); break;
  case 'projects': heading('Things I’m building'); SITE.projects.forEach(project=>{const article=el('article'); const h=el('h3'); h.append(project.url ? link(project) : el('span',project.name)); article.append(h,el('p',project.description)); result.append(article);}); paragraph(result,'More code lives on GitHub:'); listing(result,[SITE.socials[0]]); break;
  case 'blog': {
@@ -270,7 +296,7 @@ async function run(raw, source='typed'){
  }
  case 'date': paragraph(result,new Date().toLocaleString(undefined,{dateStyle:'full',timeStyle:'short'}));break;
  case 'whoami': paragraph(result,'visitor · curious human exploring Adam’s corner of the internet.');break;
- default: paragraph(result,'Command not found: ' + command,'error');paragraph(result,'Type help to see available commands.');
+ default: {paragraph(result,'Command not found: ' + command,'error');const guess=closestCommand(name);paragraph(result,guess?'Did you mean ' + guess + '? Type help to see available commands.':'Type help to see available commands.');}
  }
  if(!current()) return;
  input.focus({preventScroll:true});
@@ -288,7 +314,7 @@ input.addEventListener('keydown',e=>{
  }
  if(e.key==='ArrowUp'){e.preventDefault();if(historyIndex===history.length)draft=input.value;historyIndex=Math.max(0,historyIndex-1);input.value=history[historyIndex]??draft;}
  if(e.key==='ArrowDown'){e.preventDefault();historyIndex=Math.min(history.length,historyIndex+1);input.value=historyIndex===history.length?draft:history[historyIndex];}
- if(e.key==='Tab'){e.preventDefault();const prefix=input.value.trimStart().toLowerCase();const choices=prefix.startsWith('theme ')?window.terminalTheme.options.map(t=>'theme '+t):Object.keys(commands);const matches=choices.filter(c=>c.startsWith(prefix));if(matches.length===1){input.value=matches[0];suggestions.textContent='';}else suggestions.textContent=matches.join('   ');}
+ if(e.key==='Tab'){e.preventDefault();const prefix=input.value.trimStart().toLowerCase();const choices=prefix.startsWith('theme ')?window.terminalTheme.options.map(t=>'theme '+t):Object.keys(commands);let matches=choices.filter(c=>c.startsWith(prefix));if(!matches.length&&!prefix.includes(' '))matches=Object.keys(aliases).filter(c=>c.startsWith(prefix));if(matches.length===1){input.value=matches[0];suggestions.textContent='';}else suggestions.textContent=matches.join('   ');}
  if(e.key==='l' && e.ctrlKey){e.preventDefault();clear();}
  if(e.key==='Escape'){closeBlogSelection();input.value='';suggestions.textContent='';}
 });
