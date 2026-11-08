@@ -119,7 +119,7 @@ function markdown(source) {
   return { root, all: tag => descendants(root).filter(child => child.tagName === tag.toUpperCase()) };
 }
 
-function terminal({ reduced = false, canvas = true } = {}) {
+function terminal({ reduced = false, canvas = true, posthog } = {}) {
   const app = boot();
   const analytics = [];
   app.context.window.terminalAnalytics = { track(event, properties, options) { analytics.push({ event, properties, options }); } };
@@ -158,6 +158,16 @@ function terminal({ reduced = false, canvas = true } = {}) {
   // Tests own their posts, independently of the published content.
   app.context.SITE.posts = [];
   runInNewContext(readFileSync('dist/markdown.js', 'utf8'), app.context);
+  // Optional PostHog stand-in: flags, payloads and a timer the test can fire by hand.
+  const timers = [];
+  if (posthog) {
+    app.context.window.posthog = posthog;
+    app.context.window.terminalAnalytics.enabled = true;
+    app.context.setTimeout = fn => { timers.push(fn); return timers.length; };
+    app.context.clearTimeout = () => {};
+    runInNewContext(readFileSync('dist/remote.js', 'utf8'), app.context);
+    app.context.SITE.posts = app.context.SITE.posts.length ? app.context.SITE.posts : [];
+  }
   runInNewContext(readFileSync('dist/terminal.js', 'utf8'), app.context);
   const input = nodes['#command-input'];
   const submit = value => { input.value = value; return nodes['#command-form'].events.submit({ preventDefault() {} }); };
@@ -168,7 +178,7 @@ function terminal({ reduced = false, canvas = true } = {}) {
     input.events.input({ inputType: 'insertText', data, ...extra });
   };
   const key = key => input.events.keydown({ key, preventDefault() {} });
-  return { ...app, nodes, input, submit, type, key, motion, analytics, layer: nodes['#typing-layer'] };
+  return { ...app, nodes, input, submit, type, key, motion, analytics, timers, layer: nodes['#typing-layer'] };
 }
 
 test('terminal command validates arguments and Tab completes theme choices', () => {
@@ -764,4 +774,106 @@ test('familiar shell aliases resolve to commands, with typo hints and Tab comple
   assert.equal(commands[2].attempted, undefined);
   app.input.value = 'cont'; app.key('Tab');
   assert.equal(app.input.value, 'contact');
+});
+
+
+function fakePostHog({ flags = {}, payloads = {} } = {}) {
+  const callbacks = [];
+  return { flags, payloads, callbacks, onFeatureFlags(callback) { callbacks.push(callback); },
+    getFeatureFlag: key => flags[key], getFeatureFlagPayload: key => payloads[key], fire() { callbacks.forEach(callback => callback()); } };
+}
+const post = { slug: 'remote-post', title: 'Remote post', date: '2026-11-08', file: 'posts/remote-post.md' };
+
+test('remote.js leaves bundled content and every section on when PostHog is not live', async () => {
+  const app = terminal();
+  runInNewContext(readFileSync('dist/remote.js', 'utf8'), app.context);
+  const remote = app.context.window.terminalRemote;
+  assert.equal(remote.settled, true);
+  assert.deepEqual([...Object.values(remote.sources)], ['local', 'local', 'local', 'local']);
+  assert.equal(remote.enabled('blog') && remote.enabled('funding') && remote.enabled('projects'), true);
+  await app.submit('funding');
+  assert.match(app.nodes['#output'].textContent, /Buy me a Coffee/);
+});
+
+test('remote config payloads replace content only after validation', async () => {
+  const posthog = fakePostHog({ payloads: {
+    'terminal-config-posts': JSON.stringify([post, { ...post, slug: 'bad file', file: 'https://evil.example/x.md' }, { ...post, slug: 'dupe-check' }, post]),
+    'terminal-config-projects': [{ name: 'Remote project', description: 'Works', url: 'javascript:alert(1)' }, { name: 'Safe', description: 'No link' }],
+    'terminal-config-socials': [{ name: 'Mastodon', url: 'https://example.social/@adam' }, { name: 'Bad', url: 'data:text/html,x' }],
+    'terminal-config-funding': 'not json'
+  } });
+  const app = terminal({ posthog });
+  const remote = app.context.window.terminalRemote;
+  assert.equal(remote.settled, false);
+  posthog.fire();
+  assert.equal(remote.settled, true);
+  assert.deepEqual([...app.context.SITE.posts.map(item => item.slug)], ['remote-post', 'dupe-check']);
+  assert.deepEqual([...app.context.SITE.projects.map(item => item.name)], ['Safe']);
+  assert.deepEqual([...app.context.SITE.socials.map(item => item.name)], ['Mastodon']);
+  assert.equal(app.context.SITE.funding[0].name, 'Buy me a Coffee', 'invalid payload falls back to bundled funding');
+  assert.deepEqual({ ...remote.sources }, { posts: 'remote', projects: 'remote', socials: 'remote', funding: 'fallback' });
+  const loaded = app.analytics.find(item => item.event === 'remote_config_loaded');
+  assert.deepEqual([...loaded.properties.remote], ['posts', 'projects', 'socials']);
+  assert.deepEqual([...loaded.properties.fallback], ['funding']);
+});
+
+test('an empty remote array keeps the honest empty state', async () => {
+  const posthog = fakePostHog({ payloads: { 'terminal-config-posts': [] } });
+  const app = terminal({ posthog });
+  posthog.fire();
+  await app.submit('blog');
+  assert.match(app.nodes['#output'].textContent, /No posts published yet/);
+});
+
+test('switched-off sections stay listed and show a notice, even for blog slugs and --demo', async () => {
+  const posthog = fakePostHog({ flags: { 'terminal-blog': false, 'terminal-funding': false, 'terminal-projects': false } });
+  const app = terminal({ posthog }); posthog.fire();
+  app.context.SITE.posts.push({ slug: 'hello', title: 'Hello', date: '2026-11-02', markdown: 'Hi' });
+  const out = () => app.nodes['#output'].textContent;
+  await app.submit('help');
+  assert.match(out(), /blog.*funding|funding.*blog/s);
+  for (const command of ['blog', 'blog hello', 'blog --demo', 'cat hello']) await app.submit(command);
+  await app.submit('funding'); await app.submit('projects');
+  assert.equal((out().match(/The blog is switched off/g) || []).length, 4);
+  assert.match(out(), /Funding links are switched off/);
+  assert.match(out(), /Projects are switched off/);
+  assert.doesNotMatch(out(), /Buy me a Coffee|Personal Terminal|Hi/);
+  assert.equal(app.analytics.filter(item => item.event === 'section_disabled').length, 6);
+  assert.equal(app.analytics.some(item => ['post_opened', 'blog_selector_opened'].includes(item.event)), false);
+  app.input.value = 'fun'; app.key('Tab');
+  assert.equal(app.input.value, 'funding', 'Tab still completes disabled commands');
+});
+
+test('a missing flag fails open and projects tolerates socials without GitHub', async () => {
+  const posthog = fakePostHog({ payloads: { 'terminal-config-socials': [{ name: 'Mastodon', url: 'https://example.social/@adam' }] } });
+  const app = terminal({ posthog }); posthog.fire();
+  await app.submit('projects');
+  assert.match(app.nodes['#output'].textContent, /Personal Terminal/);
+  assert.doesNotMatch(app.nodes['#output'].textContent, /More code lives on GitHub/);
+});
+
+test('commands wait for PostHog, time out to bundled content, and never act on a cleared transcript', async () => {
+  const posthog = fakePostHog({ flags: { 'terminal-funding': false } });
+  const app = terminal({ posthog });
+  const waiting = app.submit('funding');
+  assert.match(app.nodes['#output'].textContent, /Loading…/);
+  posthog.fire();
+  await waiting;
+  assert.match(app.nodes['#output'].textContent, /Funding links are switched off/);
+  assert.doesNotMatch(app.nodes['#output'].textContent, /Loading…/);
+
+  const slow = fakePostHog();
+  const timeout = terminal({ posthog: slow });
+  const pending = timeout.submit('funding');
+  timeout.timers[0]();
+  await pending;
+  assert.match(timeout.nodes['#output'].textContent, /Buy me a Coffee/);
+  assert.equal(timeout.context.window.terminalRemote.sources.funding, 'fallback');
+
+  const cleared = terminal({ posthog: fakePostHog() });
+  const stale = cleared.submit('blog');
+  cleared.submit('clear');
+  cleared.timers[0]();
+  await stale;
+  assert.equal(cleared.nodes['#output'].textContent, '');
 });

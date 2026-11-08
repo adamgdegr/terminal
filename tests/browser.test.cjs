@@ -139,6 +139,18 @@ async function browserFlow() {
   assert(click.event === 'link_clicked' && click.properties.host === 'github.com' && click.properties.section === 'socials', 'link click tracked');
   assert(logged.some(item => item.event === 'terminal_command' && item.properties.command === 'socials' && item.properties.theme), 'command tracked with theme');
   assert(logged.some(item => item.event === 'post_read' && item.properties.slug === 'markdown-demo'), 'demo read time tracked');
+  // Remote config: locally PostHog is absent, so bundled content applies and every section is on.
+  const remote = window.terminalRemote;
+  assert(remote && remote.settled && remote.enabled('blog') && Object.values(remote.sources).every(source => source === 'local'), 'remote config falls back locally');
+  remote.flags.funding = false;
+  await command('clear'); await command('funding'); await command('help');
+  const transcript = document.querySelector('#output').textContent;
+  assert(transcript.includes('Funding links are switched off') && !transcript.includes('Buy me a Coffee'), 'switched-off section shows notice');
+  assert(transcript.includes('funding'), 'switched-off command stays listed');
+  assert(document.documentElement.scrollWidth <= innerWidth, 'notice has no horizontal overflow');
+  remote.flags.funding = true;
+  await command('funding');
+  assert(document.querySelector('#output').lastElementChild.textContent.includes('Buy me a Coffee'), 'section returns when flag is on');
   window.parent.document.body.dataset.smoke = 'passed';
 }
 

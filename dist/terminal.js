@@ -171,7 +171,9 @@ function openBlogSelection(result,posts){
  blogSelection={posts:posts.slice(),page:0,index:0,buttons:[],choices:[],list,status,pageLabel};
  input.setAttribute('aria-describedby',hint.id);
  renderBlogPage();
- track('blog_selector_opened',{post_count:posts.length,page_count:Math.ceil(posts.length/blogPageSize),filtered:posts.length!==SITE.posts.length});
+ const selectorProperties={post_count:posts.length,page_count:Math.ceil(posts.length/blogPageSize),filtered:posts.length!==SITE.posts.length};
+ const postSource=window.terminalRemote?.source('posts'); if(postSource) selectorProperties.config_source=postSource;
+ track('blog_selector_opened',selectorProperties);
 }
 async function renderPost(result, post) {
  if(typeof post.file !== 'string') {
@@ -204,6 +206,10 @@ async function renderPost(result, post) {
    return false;
  }
 }
+// Sections that PostHog can switch off. Their commands stay listed and print a notice instead.
+const disabledNotices={blog:'The blog is switched off right now. Check back soon.',funding:'Funding links are switched off right now.',projects:'Projects are switched off right now.'};
+// Commands that read remotely configurable content wait briefly for PostHog on first use.
+const remoteBacked=['blog','funding','projects','socials'];
 function trackCommand(name,args,source,alias){
  const known=Object.hasOwn(commands,name);
  const properties={command:known?name:'unknown',source,argument_count:args.length,command_number:history.length,seconds_since_load:Math.round((Date.now()-loadedAt)/1000)};
@@ -216,7 +222,9 @@ function trackCommand(name,args,source,alias){
  track('terminal_command',properties);
 }
 function trackPostOpened(post,via){
- track('post_opened',{slug:post.slug||'markdown-demo',title:post.title||'Markdown reader',date:post.date,via,format:typeof post.file==='string'?'file':typeof post.markdown==='string'?'markdown':'legacy'});
+ const properties={slug:post.slug||'markdown-demo',title:post.title||'Markdown reader',date:post.date,via,format:typeof post.file==='string'?'file':typeof post.markdown==='string'?'markdown':'legacy'};
+ const source=window.terminalRemote?.source('posts'); if(source) properties.config_source=source;
+ track('post_opened',properties);
 }
 async function run(raw, source='typed'){
  finishTyping();
@@ -244,10 +252,20 @@ async function run(raw, source='typed'){
    body.scrollTop=entry.offsetTop-body.offsetTop;
  };
  const heading = text => result.append(el('h2',text));
- switch(name){
+ if(remoteBacked.includes(name) && window.terminalRemote && !window.terminalRemote.settled){
+   const loading=el('p','Loading…','muted'); loading.setAttribute('role','status'); result.append(loading);
+   try { await window.terminalRemote.ready; } catch { /* Fall back to the bundled content. */ }
+   loading.remove();
+   if(!current()) return;
+ }
+ const disabled=Object.hasOwn(disabledNotices,name) && window.terminalRemote?.enabled(name)===false;
+ if(disabled){
+   paragraph(result,disabledNotices[name]);
+   track('section_disabled',{command:name});
+ } else switch(name){
  case 'help': heading('A few places to go'); {const dl=el('dl'); Object.entries(commands).forEach(([cmd,desc])=>{const dt=el('dt'); dt.append(el('code',cmd)); const dd=el('dd',desc); const names=aliasesFor(cmd); if(names.length) dd.append(el('span',' · also: '+names.slice(0,4).join(', '),'muted')); dl.append(dt,dd);}); result.append(dl); paragraph(result,'Shell habits work too: ls lists these commands, cat SLUG reads a post, dark and light switch themes.','muted'); paragraph(result,'Use ↑ / ↓ for history, Tab to complete, or Ctrl L to clear.','muted');} break;
  case 'about': heading('Howdy, I’m ' + SITE.name + '.'); paragraph(result,SITE.bio); paragraph(result,'Based in ' + SITE.location + '.'); paragraph(result,'Certified: ' + SITE.certifications.join(', ')); paragraph(result,'Currently studying: ' + SITE.studying.join(', ') + '.'); break;
- case 'projects': heading('Things I’m building'); SITE.projects.forEach(project=>{const article=el('article'); const h=el('h3'); h.append(project.url ? link(project) : el('span',project.name)); article.append(h,el('p',project.description)); result.append(article);}); paragraph(result,'More code lives on GitHub:'); listing(result,[SITE.socials[0]]); break;
+ case 'projects': heading('Things I’m building'); SITE.projects.forEach(project=>{const article=el('article'); const h=el('h3'); h.append(project.url ? link(project) : el('span',project.name)); article.append(h,el('p',project.description)); result.append(article);}); {const github=SITE.socials.find(item=>/^github$/i.test(item.name)); if(github){paragraph(result,'More code lives on GitHub:'); listing(result,[github]);}} break;
  case 'blog': {
    if(args.join(' ') === '--demo') {
      startPost();
