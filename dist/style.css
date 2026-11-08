@@ -70,3 +70,4 @@ code{font:inherit;color:var(--mauve)}
 .markdown-body pre:focus-visible,.markdown-body .md-table:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
 @media(max-width:650px){.markdown-body pre{padding:12px}.markdown-body th,.markdown-body td{padding:6px 10px}.markdown-body table{min-width:100%}.markdown-body .md-callout{padding-left:12px}}
 
+.version-info dd{overflow-wrap:anywhere}.version-info .version-body{white-space:pre-wrap;color:var(--muted)}

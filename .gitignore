@@ -5,3 +5,4 @@ superbot.app.json
 .claude
 .wrangler
 .dev.vars*
+dist/version.json

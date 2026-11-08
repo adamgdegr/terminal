@@ -1,9 +1,10 @@
 // PostHog feature flags and remote config for the terminal.
 // Flags gate the blog, funding and projects commands; remote config flags carry
-// JSON payloads that replace SITE.posts, SITE.projects, SITE.socials and
-// SITE.funding. content.js stays the fallback: when PostHog is not loaded (local
-// hosts, Do Not Track, Global Privacy Control, blocked scripts, slow networks) or
-// a payload is missing or invalid, the local values are used and every section stays on.
+// JSON payloads that fill SITE.posts, SITE.projects, SITE.socials and SITE.funding.
+// content.js ships those lists empty, so when PostHog is not loaded (local hosts,
+// Do Not Track, Global Privacy Control, blocked scripts, slow networks) or a payload
+// is missing or invalid, the section is empty and the terminal shows its empty state.
+// Every section stays on unless PostHog explicitly answers that its flag is off.
 (() => {
   'use strict';
   const flagKeys = { blog: 'terminal-blog', funding: 'terminal-funding', projects: 'terminal-projects' };
@@ -18,12 +19,15 @@
   const site = window.SITE || (window.SITE = {});
   const flags = { blog: true, funding: true, projects: true };
   const sources = { posts: 'local', projects: 'local', socials: 'local', funding: 'local' };
+  // Local values (empty by default), restored when a payload later disappears or turns invalid.
+  const defaults = { posts: site.posts, projects: site.projects, socials: site.socials, funding: site.funding };
   const analytics = window.terminalAnalytics;
   const live = Boolean(analytics?.enabled && window.posthog);
   let settled = false;
   let reported = false;
   let timer;
   let finish;
+  const waiters = [];
   const ready = new Promise(resolve => { finish = resolve; });
 
   const text = (value, max) => typeof value === 'string' && value.trim() && value.length <= max ? value.trim() : undefined;
@@ -77,17 +81,48 @@
     } catch { return undefined; }
   }
 
+  // True once PostHog has really answered (not blocked, offline or still loading).
+  function answered(posthog) {
+    try {
+      if (Object.values(flagKeys).concat(Object.values(configKeys)).some(key => posthog.getFeatureFlag?.(key, { send_event: false }) !== undefined)) return true;
+      return posthog.featureFlags?.hasLoadedFlags === true && !posthog.featureFlags?.errorsLoading;
+    } catch { return false; }
+  }
+
   function load() {
     const posthog = window.posthog;
     if (!live || !posthog) return;
+    const heard = answered(posthog);
     Object.entries(flagKeys).forEach(([section, key]) => {
-      try { flags[section] = posthog.getFeatureFlag?.(key, { send_event: false }) !== false; } catch { flags[section] = true; }
+      let value;
+      try { value = posthog.getFeatureFlag?.(key, { send_event: false }); } catch { value = undefined; }
+      // Off when PostHog says false, or when it answered without the flag (inactive or deleted). Fail open otherwise.
+      flags[section] = heard ? value !== false && value !== undefined : true;
     });
     Object.entries(configKeys).forEach(([kind, key]) => {
       let items;
       try { items = validate(kind, posthog.getFeatureFlagPayload?.(key)); } catch { items = undefined; }
-      if (items) { site[kind] = items; sources[kind] = 'remote'; } else sources[kind] = 'fallback';
+      if (items) { site[kind] = items; sources[kind] = 'remote'; return; }
+      // Missing or invalid: go back to the bundled content if a remote value was applied earlier.
+      if (sources[kind] === 'remote') site[kind] = defaults[kind];
+      sources[kind] = 'fallback';
     });
+  }
+
+  // Ask PostHog again and wait (briefly) for its answer, so each command follows the current flags.
+  function refresh() {
+    if (!live) return Promise.resolve();
+    return new Promise(resolve => {
+      const waiter = { resolve, timer: undefined };
+      waiter.timer = setTimeout(() => { waiters.splice(waiters.indexOf(waiter), 1); load(); settle(); resolve(); }, timeoutMs);
+      waiters.push(waiter);
+      try { window.posthog.reloadFeatureFlags(); } catch { waiters.splice(waiters.indexOf(waiter), 1); clearTimeout(waiter.timer); load(); settle(); resolve(); }
+    });
+  }
+
+  function answer() {
+    load(); settle();
+    waiters.splice(0).forEach(waiter => { clearTimeout(waiter.timer); waiter.resolve(); });
   }
 
   function settle() {
@@ -109,6 +144,8 @@
 
   window.terminalRemote = {
     ready,
+    live,
+    refresh,
     get settled() { return settled; },
     enabled: section => flags[section] !== false,
     source: kind => sources[kind],
@@ -120,6 +157,6 @@
   // Commands wait at most timeoutMs; late flags still apply to later commands.
   timer = setTimeout(() => { load(); settle(); }, timeoutMs);
   try {
-    window.posthog.onFeatureFlags(() => { load(); settle(); });
+    window.posthog.onFeatureFlags(answer);
   } catch { settle(); }
 })();

@@ -28,7 +28,7 @@ reducedMotion.addEventListener('change',finishTyping);
 const history = [];
 let historyIndex = 0;
 let draft = '';
-const commands = {help:'Show available commands',about:'Meet Me',projects:'Explore what I build',blog:'Read notes and posts',socials:'Find me elsewhere',funding:'Support me and my work',motd:'Show the welcome message',clear:'Clear the terminal',date:'Show your local date',whoami:'Find out who you are',theme:'View or set the theme (system, latte, frappe, macchiato, mocha)'};
+const commands = {help:'Show available commands',about:'Meet Me',projects:'Explore what I build',blog:'Read notes and posts',socials:'Find me elsewhere',funding:'Support me and my work',motd:'Show the welcome message',clear:'Clear the terminal',date:'Show your local date',whoami:'Find out who you are',version:'Show the build, commit and branch',theme:'View or set the theme (system, latte, frappe, macchiato, mocha)'};
 // Familiar shell names map onto the commands above. A string is a plain alias; an array adds preset arguments.
 const aliases={ls:'help',ll:'help',dir:'help',man:'help',h:'help','?':'help','--help':'help','-h':'help',commands:'help',menu:'help',
  me:'about',bio:'about',info:'about',whois:'about',finger:'about',
@@ -38,6 +38,7 @@ const aliases={ls:'help',ll:'help',dir:'help',man:'help',h:'help','?':'help','--
  support:'funding',sponsor:'funding',donate:'funding',tip:'funding',
  welcome:'motd',banner:'motd',hello:'motd',hi:'motd',home:'motd',
  cls:'clear',reset:'clear',c:'clear',
+ ver:'version','-v':'version','--version':'version',build:'version',commit:'version',git:'version',
  time:'date',now:'date',
  id:'whoami',who:'whoami',w:'whoami',
  themes:'theme',color:'theme',colors:'theme',colour:'theme',dark:['theme','mocha'],light:['theme','latte']};
@@ -208,7 +209,55 @@ async function renderPost(result, post) {
 }
 // Sections that PostHog can switch off. Their commands stay listed and print a notice instead.
 const disabledNotices={blog:'The blog is switched off right now. Check back soon.',funding:'Funding links are switched off right now.',projects:'Projects are switched off right now.'};
-// Commands that read remotely configurable content wait briefly for PostHog on first use.
+// Build details come from dist/version.json, written by scripts/version.js at dev and deploy time.
+let versionInfo;
+async function loadVersion(){
+ if(versionInfo) return versionInfo;
+ const url=new URL('version.json',document.baseURI);
+ if(url.origin !== new URL(document.baseURI).origin) throw Error('Invalid build file');
+ const response=await fetch(url.href,{cache:'no-store'});
+ if(!response.ok) throw Error('HTTP ' + response.status);
+ if(/text\/html/i.test(response.headers.get('content-type') || '')) throw Error('Expected JSON, received HTML');
+ const data=await response.json();
+ if(!data || typeof data !== 'object' || !data.commit || typeof data.commit !== 'object') throw Error('Malformed build file');
+ const text=(value,max=300)=>typeof value==='string'?value.slice(0,max):'';
+ const count=value=>Number.isFinite(value)?value:0;
+ versionInfo={
+   branch:text(data.branch,100),author:text(data.author,100),committer:text(data.committer,100),
+   coAuthors:Array.isArray(data.coAuthors)?data.coAuthors.slice(0,10).map(name=>text(name,100)).filter(Boolean):[],
+   commitCount:count(data.commitCount),dirty:data.dirty===true,generatedAt:text(data.generatedAt,40),
+   commit:{hash:text(data.commit.hash,64),short:text(data.commit.short,16),subject:text(data.commit.subject),body:text(data.commit.body,2000),
+     authoredAt:text(data.commit.authoredAt,40),committedAt:text(data.commit.committedAt,40),url:text(data.commit.url,300),
+     tags:Array.isArray(data.commit.tags)?data.commit.tags.slice(0,10).map(tag=>text(tag,100)).filter(Boolean):[],
+     parents:count(data.commit.parents),files:count(data.commit.files),insertions:count(data.commit.insertions),deletions:count(data.commit.deletions)}
+ };
+ return versionInfo;
+}
+function renderVersion(result,info){
+ const when=value=>{const date=new Date(value);return Number.isNaN(date.getTime())?value:date.toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});};
+ const {commit}=info;
+ const rows=[['Branch',info.branch],['Commit',commit.url?link({name:commit.short||commit.hash.slice(0,7),url:commit.url}):commit.short||commit.hash],['Message',commit.subject]];
+ if(commit.body) rows.push(['Details',commit.body]);
+ rows.push(['Author',info.author]);
+ if(info.coAuthors.length) rows.push(['Co-authors',info.coAuthors.join(', ')]);
+ if(info.committer && info.committer!==info.author) rows.push(['Committer',info.committer]);
+ rows.push(['Authored',when(commit.authoredAt)]);
+ if(commit.committedAt && commit.committedAt!==commit.authoredAt) rows.push(['Committed',when(commit.committedAt)]);
+ if(commit.tags.length) rows.push(['Tags',commit.tags.join(', ')]);
+ rows.push(['Changes',commit.files+' file'+(commit.files===1?'':'s')+' · +'+commit.insertions+' −'+commit.deletions]);
+ if(commit.parents>1) rows.push(['Parents',String(commit.parents)+' (merge)']);
+ rows.push(['History',info.commitCount+' commit'+(info.commitCount===1?'':'s')+' on this branch']);
+ rows.push(['Working tree',info.dirty?'Built with uncommitted changes':'Clean']);
+ if(info.generatedAt) rows.push(['Built',when(info.generatedAt)]);
+ const dl=el('dl','', 'version-info');
+ rows.filter(([,value])=>value!=='').forEach(([label,value])=>{
+   const dt=el('dt',label); const dd=el('dd'); if(typeof value==='string') dd.textContent=value; else dd.append(value);
+   if(label==='Details') dd.className='version-body';
+   dl.append(dt,dd);
+ });
+ result.append(dl);
+}
+// Commands that read remotely configurable content re-check PostHog each time they run.
 const remoteBacked=['blog','funding','projects','socials'];
 function trackCommand(name,args,source,alias){
  const known=Object.hasOwn(commands,name);
@@ -252,9 +301,10 @@ async function run(raw, source='typed'){
    body.scrollTop=entry.offsetTop-body.offsetTop;
  };
  const heading = text => result.append(el('h2',text));
- if(remoteBacked.includes(name) && window.terminalRemote && !window.terminalRemote.settled){
+ if(remoteBacked.includes(name) && window.terminalRemote?.live){
+   // Re-check PostHog on every use so flag and payload edits apply without a reload.
    const loading=el('p','Loading…','muted'); loading.setAttribute('role','status'); result.append(loading);
-   try { await window.terminalRemote.ready; } catch { /* Fall back to the bundled content. */ }
+   try { await window.terminalRemote.refresh(); } catch { /* Fall back to the last known values. */ }
    loading.remove();
    if(!current()) return;
  }
@@ -265,7 +315,7 @@ async function run(raw, source='typed'){
  } else switch(name){
  case 'help': heading('A few places to go'); {const dl=el('dl'); Object.entries(commands).forEach(([cmd,desc])=>{const dt=el('dt'); dt.append(el('code',cmd)); const dd=el('dd',desc); const names=aliasesFor(cmd); if(names.length) dd.append(el('span',' · also: '+names.slice(0,4).join(', '),'muted')); dl.append(dt,dd);}); result.append(dl); paragraph(result,'Shell habits work too: ls lists these commands, cat SLUG reads a post, dark and light switch themes.','muted'); paragraph(result,'Use ↑ / ↓ for history, Tab to complete, or Ctrl L to clear.','muted');} break;
  case 'about': heading('Howdy, I’m ' + SITE.name + '.'); paragraph(result,SITE.bio); paragraph(result,'Based in ' + SITE.location + '.'); paragraph(result,'Certified: ' + SITE.certifications.join(', ')); paragraph(result,'Currently studying: ' + SITE.studying.join(', ') + '.'); break;
- case 'projects': heading('Things I’m building'); SITE.projects.forEach(project=>{const article=el('article'); const h=el('h3'); h.append(project.url ? link(project) : el('span',project.name)); article.append(h,el('p',project.description)); result.append(article);}); {const github=SITE.socials.find(item=>/^github$/i.test(item.name)); if(github){paragraph(result,'More code lives on GitHub:'); listing(result,[github]);}} break;
+ case 'projects': heading('Things I’m building'); SITE.projects.forEach(project=>{const article=el('article'); const h=el('h3'); h.append(project.url ? link(project) : el('span',project.name)); article.append(h,el('p',project.description)); result.append(article);}); if(!SITE.projects.length) paragraph(result,'No projects listed yet. Check back soon.'); {const github=SITE.socials.find(item=>/^github$/i.test(item.name)); if(github){paragraph(result,'More code lives on GitHub:'); listing(result,[github]);}} break;
  case 'blog': {
    if(args.join(' ') === '--demo') {
      startPost();
@@ -296,7 +346,21 @@ async function run(raw, source='typed'){
    }
    break;
  }
- case 'socials': heading('Around the internet');listing(result,SITE.socials);break;
+ case 'socials': heading('Around the internet');if(SITE.socials.length)listing(result,SITE.socials);else paragraph(result,'No links listed yet. Check back soon.');break;
+ case 'version': {
+   heading('Build information');
+   const status=el('p','Loading build information…','muted'); status.setAttribute('role','status'); result.append(status);
+   try {
+     const info=await loadVersion();
+     // A newer command may have run meanwhile; still finish this entry unless it was cleared.
+     if(entry.isConnected === false) return;
+     status.remove(); renderVersion(result,info);
+   } catch(error) {
+     if(entry.isConnected === false) return;
+     status.textContent='Build information is unavailable. Try the version command again.'; status.className='error';
+   }
+   break;
+ }
  case 'funding': heading('Support the work');if(SITE.funding.length)listing(result,SITE.funding);else paragraph(result,'Funding links haven’t been added yet. For now, exploring my projects and sharing feedback is appreciated.'); break;
  case 'motd': heading('Message of the day');paragraph(result,'I build things, break things, and write about what I learn.');paragraph(result,'Make yourself at home. Type help to explore.');break;
  case 'theme': {

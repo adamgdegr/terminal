@@ -4,18 +4,13 @@ window.SITE = {
   location: 'San Antonio, USA',
   certifications: ['CompTIA Tech+ (March 2026)'],
   studying: ['CompTIA Network+', 'CompTIA Security+', 'Cisco CCNA'],
-  projects: [{ name: 'Personal Terminal', description: 'The website you are exploring and GitHub README. A small, dependency-free terminal with device-synced Catppuccin themes.', url: "https://github.com/adamgdegr/adamgdegr" }],
-  // Posts: { slug, title, date, file: 'posts/my-post.md' }
-  posts: [
-    {
-      slug: 'learning-to-build-my-website-with-ai',
-      title: 'How I Learned to Build My Website with AI',
-      date: '2026-11-02',
-      file: 'posts/learning-to-build-my-website-with-ai.md'
-    }
-  ],
+  // Projects, posts, socials and funding links are served by PostHog remote config
+  // (terminal-config-projects|posts|socials|funding). These stay empty on purpose, so
+  // with no PostHog (local, Do Not Track, offline) the terminal shows honest empty states.
+  projects: [],
+  posts: [],
   // Reader documentation, deliberately separate from published posts.
   markdownDemo: { file: 'posts/markdown-demo.md' },
-  socials: [{ name: 'GitHub', url: 'https://github.com/adamgdegr' }, { name: 'X', url: 'https://x.com/adamgdegr' }],
-  funding: [{name: "Buy me a Coffee", url:"https://buymeacoffee.com/adamgdegr"}]
+  socials: [],
+  funding: []
 };

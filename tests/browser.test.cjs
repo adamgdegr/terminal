@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { createServer } = require('node:http');
 const { readFile, mkdtemp, mkdir, rm } = require('node:fs/promises');
 const { existsSync } = require('node:fs');
-const { spawn } = require('node:child_process');
+const { spawn, execFileSync } = require('node:child_process');
 const { tmpdir } = require('node:os');
 const { join, resolve, extname } = require('node:path');
 
@@ -16,7 +16,7 @@ async function browserFlow() {
   const command = async value => {
     input.value = value; form.requestSubmit();
     const deadline = Date.now() + 4000;
-    while ([...document.querySelectorAll('[role=status]')].some(node => node.textContent === 'Loading Markdown…')) {
+    while ([...document.querySelectorAll('[role=status]')].some(node => /^Loading (Markdown|build information)…$/.test(node.textContent))) {
       assert(Date.now() < deadline, 'Markdown load completed');
       await new Promise(resolve => setTimeout(resolve, 10));
     }
@@ -128,6 +128,10 @@ async function browserFlow() {
   // Analytics: local hosts never load PostHog but still record events in memory.
   assert(window.terminalAnalytics && window.terminalAnalytics.enabled === false && !window.posthog, 'analytics disabled locally');
   assert(!performance.getEntriesByType('resource').some(entry => entry.name.includes('posthog')), 'no PostHog requests locally');
+  // Remote-served lists ship empty; locally the terminal says so, then fixtures stand in for a PostHog payload.
+  await command('socials');
+  assert(document.querySelector('#output').lastElementChild.textContent.includes('No links listed yet'), 'empty socials state');
+  window.SITE.socials = [{ name: 'GitHub', url: 'https://github.com/adamgdegr' }];
   await command('socials');
   const social = document.querySelector('#output').lastElementChild.querySelector('a[href]');
   const block = event => event.preventDefault();
@@ -142,6 +146,7 @@ async function browserFlow() {
   // Remote config: locally PostHog is absent, so bundled content applies and every section is on.
   const remote = window.terminalRemote;
   assert(remote && remote.settled && remote.enabled('blog') && Object.values(remote.sources).every(source => source === 'local'), 'remote config falls back locally');
+  window.SITE.funding = [{ name: 'Buy me a Coffee', url: 'https://buymeacoffee.com/adamgdegr' }];
   remote.flags.funding = false;
   await command('clear'); await command('funding'); await command('help');
   const transcript = document.querySelector('#output').textContent;
@@ -151,11 +156,19 @@ async function browserFlow() {
   remote.flags.funding = true;
   await command('funding');
   assert(document.querySelector('#output').lastElementChild.textContent.includes('Buy me a Coffee'), 'section returns when flag is on');
+  // Version: the build file is written by scripts/version.js and rendered as plain text.
+  await command('clear'); await command('version');
+  const versionText = document.querySelector('#output').textContent;
+  assert(versionText.includes('Build information') && /Branch/.test(versionText) && /Author/.test(versionText) && /Message/.test(versionText), 'version details render');
+  assert(!versionText.includes('Build information is unavailable') && !versionText.includes('Loading build'), 'version loads');
+  assert(document.documentElement.scrollWidth <= innerWidth, 'version has no horizontal overflow');
   window.parent.document.body.dataset.smoke = 'passed';
 }
 
 test('blog reader works in desktop and mobile Chromium', { timeout: 60000 }, async () => {
   assert.ok(chrome, 'Install Chrome/Chromium or set CHROME_BIN to run browser tests');
+  // The version command reads a build file that deploys generate (git-ignored).
+  execFileSync('node', ['scripts/version.js'], { stdio: 'ignore' });
   const root = resolve('dist');
   const server = createServer(async (req, res) => {
     try {
