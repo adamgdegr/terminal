@@ -686,10 +686,11 @@ test('analytics loads PostHog in production without cookies and queues tracked e
   const { analytics, posthog, inserted } = loadAnalytics();
   assert.equal(analytics.enabled, true);
   assert.equal(inserted.length, 1);
-  assert.equal(inserted[0].src, 'https://us-assets.i.posthog.com/static/array.js');
+  assert.equal(inserted[0].src, 'https://pulse.adamgd.dev/static/array.js');
   const [[key, config]] = posthog._i;
   assert.match(key, /^phc_/);
-  assert.equal(config.api_host, 'https://us.i.posthog.com');
+  assert.equal(config.api_host, 'https://pulse.adamgd.dev');
+  assert.equal(config.ui_host, 'https://us.posthog.com');
   assert.equal(config.persistence, 'localStorage');
   assert.equal(config.respect_dnt, true);
   analytics.track('terminal_command', { command: 'help' });

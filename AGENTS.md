@@ -60,7 +60,7 @@ This guidance applies to the entire repository.
 
 ## Analytics (PostHog)
 
-- `dist/analytics.js` owns PostHog: the official loader snippet, the project key, US host (`us.i.posthog.com`), `defaults: '2026-05-30'` (pageviews, page leaves with time on page, autocapture, web vitals), `persistence: 'localStorage'` (no cookies), `person_profiles: 'identified_only'`, and `respect_dnt`.
+- `dist/analytics.js` owns PostHog: the official loader snippet, the project key, reverse-proxy host `pulse.adamgd.dev` as `api_host` with `ui_host` `https://us.posthog.com`, `defaults: '2026-05-30'` (pageviews, page leaves with time on page, autocapture, web vitals), `persistence: 'localStorage'` (no cookies), `person_profiles: 'identified_only'`, and `respect_dnt`.
 - PostHog never loads on `localhost`, `127.x`, `0.0.0.0`, `[::1]`, `*.local`, or `file:`, nor for visitors sending Do Not Track or Global Privacy Control. Events still go to `window.terminalAnalytics.events` (last 50) for debugging and tests.
 - `dist/terminal.js` calls `terminalAnalytics.track()` through a guarded `track()` helper; analytics failures or a missing module must never break a command. Every event carries the current `theme`.
 - Custom events: `terminal_command` (command, source typed/selection, argument_count, command_number, seconds_since_load; theme names and blog argument type only), `theme_changed`, `blog_selector_opened`, `blog_page_viewed`, `post_opened` (slug, title, date, via slug/date/selection/demo, format), `post_read` (seconds, scroll_depth %, reason command/clear/hidden; sent on leaving a post), `post_load_failed`, `post_not_found`, and `link_clicked` (label, url, host, outbound, section command, in_post, post_slug; click and middle-click, sent by beacon).
