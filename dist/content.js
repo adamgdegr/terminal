@@ -4,8 +4,8 @@ window.SITE = {
   location: 'San Antonio, USA',
   certifications: ['CompTIA Tech+ (March 2026)'],
   studying: ['CompTIA Network+', 'CompTIA Security+', 'Cisco CCNA'],
-  // Projects, posts, socials and funding links are served by PostHog remote config
-  // (terminal-config-projects|posts|socials|funding). These stay empty on purpose, so
+  // Projects, posts, socials and funding links are served by the PostHog remote config
+  // payload `terminal-config`. These stay empty on purpose, so
   // with no PostHog (local, Do Not Track, offline) the terminal shows honest empty states.
   projects: [],
   posts: [],

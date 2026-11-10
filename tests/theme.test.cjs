@@ -784,21 +784,21 @@ test('familiar shell aliases resolve to commands, with typo hints and Tab comple
 });
 
 
-// auto: every reload answers right away with the current flags, like a fast network.
-// auto: every reload answers right away with the current flags, like a fast network.
-function fakePostHog({ flags = {}, payloads = {}, auto = true } = {}) {
+// One remote config flag, terminal-config, carries every section in a single payload.
+// auto: every reload answers right away with the current payload, like a fast network.
+function fakePostHog({ config, auto = true } = {}) {
   const callbacks = [];
-  return { flags, payloads, callbacks, reloads: 0, onFeatureFlags(callback) { callbacks.push(callback); },
+  return { config, callbacks, reloads: 0, onFeatureFlags(callback) { callbacks.push(callback); },
     reloadFeatureFlags() { this.reloads++; if (auto) Promise.resolve().then(() => this.fire()); },
-    getFeatureFlag: key => flags[key], getFeatureFlagPayload: key => payloads[key], fire() { callbacks.forEach(callback => callback()); } };
+    getFeatureFlagPayload(key) { return key === 'terminal-config' ? this.config : undefined; },
+    fire() { callbacks.forEach(callback => callback()); } };
 }
 const post = { slug: 'remote-post', title: 'Remote post', date: '2026-11-08', file: 'posts/remote-post.md' };
-const allOn = { 'terminal-blog': true, 'terminal-funding': true, 'terminal-projects': true };
-const goodPayloads = () => ({
-  'terminal-config-posts': [post],
-  'terminal-config-projects': [{ name: 'Remote project', description: 'Served remotely' }],
-  'terminal-config-socials': [{ name: 'GitHub', url: 'https://github.com/adamgdegr' }],
-  'terminal-config-funding': [{ name: 'Coffee', url: 'https://buymeacoffee.com/adamgdegr' }]
+const goodConfig = () => ({
+  posts: [post],
+  projects: [{ name: 'Remote project', description: 'Served remotely' }],
+  socials: [{ name: 'GitHub', url: 'https://github.com/adamgdegr' }],
+  funding: [{ name: 'Coffee', url: 'https://buymeacoffee.com/adamgdegr' }]
 });
 
 test('the bundled content serves none of the remote payloads', () => {
@@ -826,13 +826,13 @@ test('without PostHog every remote-served section shows an honest empty state', 
   assert.match(text, /Funding links haven’t been added yet/);
 });
 
-test('remote config payloads are validated, and anything invalid leaves the section empty', async () => {
-  const posthog = fakePostHog({ flags: allOn, payloads: {
-    'terminal-config-posts': JSON.stringify([post, { ...post, slug: 'bad file', file: 'https://evil.example/x.md' }, { ...post, slug: 'dupe-check' }, post]),
-    'terminal-config-projects': [{ name: 'Remote project', description: 'Works', url: 'javascript:alert(1)' }, { name: 'Safe', description: 'No link' }],
-    'terminal-config-socials': [{ name: 'Mastodon', url: 'https://example.social/@adam' }, { name: 'Bad', url: 'data:text/html,x' }],
-    'terminal-config-funding': 'not json'
-  } });
+test('the remote config payload is validated, and anything invalid leaves its section empty', async () => {
+  const posthog = fakePostHog({ config: JSON.stringify({
+    posts: [post, { ...post, slug: 'bad file', file: 'https://evil.example/x.md' }, { ...post, slug: 'dupe-check' }, post],
+    projects: [{ name: 'Remote project', description: 'Works', url: 'javascript:alert(1)' }, { name: 'Safe', description: 'No link' }],
+    socials: [{ name: 'Mastodon', url: 'https://example.social/@adam' }, { name: 'Bad', url: 'data:text/html,x' }],
+    funding: 'not a list'
+  }) });
   const app = terminal({ posthog });
   const remote = app.context.window.terminalRemote;
   assert.equal(remote.settled, false);
@@ -841,40 +841,53 @@ test('remote config payloads are validated, and anything invalid leaves the sect
   assert.deepEqual([...app.context.SITE.posts.map(item => item.slug)], ['remote-post', 'dupe-check']);
   assert.deepEqual([...app.context.SITE.projects.map(item => item.name)], ['Safe']);
   assert.deepEqual([...app.context.SITE.socials.map(item => item.name)], ['Mastodon']);
-  assert.equal(app.context.SITE.funding.length, 0, 'invalid payload leaves funding empty');
+  assert.equal(app.context.SITE.funding.length, 0, 'invalid list leaves funding empty');
   assert.deepEqual({ ...remote.sources }, { posts: 'remote', projects: 'remote', socials: 'remote', funding: 'fallback' });
   const loaded = app.analytics.find(item => item.event === 'remote_config_loaded');
   assert.deepEqual([...loaded.properties.remote], ['posts', 'projects', 'socials']);
   assert.deepEqual([...loaded.properties.fallback], ['funding']);
 });
 
+test('a malformed payload, or one that is not an object, empties every section', async () => {
+  for (const config of ['not json', '[1,2]', JSON.stringify([post]), 42]) {
+    const app = terminal({ posthog: fakePostHog({ config }) });
+    await app.submit('blog'); await app.submit('projects');
+    assert.match(app.nodes['#output'].textContent, /No posts published yet.*No projects listed yet/s, String(config));
+    assert.deepEqual([...Object.values(app.context.window.terminalRemote.sources)], ['fallback', 'fallback', 'fallback', 'fallback']);
+    assert.doesNotMatch(app.nodes['#output'].textContent, /switched off/);
+  }
+});
+
 test('an empty remote array shows the empty state', async () => {
-  const posthog = fakePostHog({ flags: allOn, payloads: { 'terminal-config-posts': [] } });
+  const posthog = fakePostHog({ config: { posts: [] } });
   const app = terminal({ posthog });
   await app.submit('blog');
   assert.match(app.nodes['#output'].textContent, /No posts published yet/);
+  assert.equal(app.context.window.terminalRemote.sources.posts, 'remote');
 });
 
 test('switched-off sections stay listed and show a notice, even for blog slugs and --demo', async () => {
-  const posthog = fakePostHog({ flags: { 'terminal-blog': false, 'terminal-funding': false, 'terminal-projects': false }, payloads: goodPayloads() });
+  const posthog = fakePostHog({ config: { ...goodConfig(), disabled: ['blog', 'funding', 'projects', 'socials'] } });
   const app = terminal({ posthog });
   const out = () => app.nodes['#output'].textContent;
   await app.submit('help');
   assert.match(out(), /blog.*funding|funding.*blog/s);
   for (const command of ['blog', 'blog remote-post', 'blog --demo', 'cat remote-post']) await app.submit(command);
-  await app.submit('funding'); await app.submit('projects');
+  await app.submit('funding'); await app.submit('projects'); await app.submit('socials');
   assert.equal((out().match(/The blog is switched off/g) || []).length, 4);
   assert.match(out(), /Funding links are switched off/);
   assert.match(out(), /Projects are switched off/);
+  assert.match(out(), /GitHub/, 'socials cannot be switched off');
   assert.doesNotMatch(out(), /Coffee|Remote project|Remote post/);
   assert.equal(app.analytics.filter(item => item.event === 'section_disabled').length, 6);
   assert.equal(app.analytics.some(item => ['post_opened', 'blog_selector_opened'].includes(item.event)), false);
+  assert.deepEqual([...app.analytics.find(item => item.event === 'remote_config_loaded').properties.flags_off], ['blog', 'funding', 'projects']);
   app.input.value = 'fun'; app.key('Tab');
   assert.equal(app.input.value, 'funding', 'Tab still completes disabled commands');
 });
 
 test('projects tolerates remote socials without a GitHub entry', async () => {
-  const posthog = fakePostHog({ flags: allOn, payloads: { ...goodPayloads(), 'terminal-config-socials': [{ name: 'Mastodon', url: 'https://example.social/@adam' }] } });
+  const posthog = fakePostHog({ config: { ...goodConfig(), socials: [{ name: 'Mastodon', url: 'https://example.social/@adam' }] } });
   const app = terminal({ posthog });
   await app.submit('projects');
   assert.match(app.nodes['#output'].textContent, /Remote project/);
@@ -882,7 +895,7 @@ test('projects tolerates remote socials without a GitHub entry', async () => {
 });
 
 test('commands wait for PostHog, time out to empty states, and never act on a cleared transcript', async () => {
-  const posthog = fakePostHog({ flags: { 'terminal-funding': false }, auto: false });
+  const posthog = fakePostHog({ config: { disabled: ['funding'] }, auto: false });
   const app = terminal({ posthog });
   const waiting = app.submit('funding');
   assert.match(app.nodes['#output'].textContent, /Loading…/);
@@ -907,40 +920,36 @@ test('commands wait for PostHog, time out to empty states, and never act on a cl
   assert.equal(cleared.nodes['#output'].textContent, '');
 });
 
-test('every remote-backed command re-checks PostHog, so flag and payload edits apply without a reload', async () => {
-  const posthog = fakePostHog({ flags: allOn, payloads: goodPayloads() });
+test('every remote-backed command re-checks PostHog, so payload edits apply without a reload', async () => {
+  const posthog = fakePostHog({ config: goodConfig() });
   const app = terminal({ posthog });
   const out = () => app.nodes['#output'].textContent;
   await app.submit('projects');
   assert.match(out(), /Remote project/);
   assert.equal(posthog.reloads, 1);
-  posthog.flags['terminal-projects'] = false;
+  posthog.config = { ...goodConfig(), disabled: ['projects'] };
   await app.submit('projects');
   assert.equal(posthog.reloads, 2, 'checked again on the next command');
   assert.match(out(), /Projects are switched off/);
-  posthog.flags['terminal-projects'] = true;
-  posthog.payloads['terminal-config-projects'] = [{ name: 'Edited remotely', description: 'Fresh' }];
+  posthog.config = { ...goodConfig(), projects: [{ name: 'Edited remotely', description: 'Fresh' }] };
   await app.submit('projects');
   assert.match(out(), /Edited remotely/);
-  delete posthog.payloads['terminal-config-projects'];
+  posthog.config = undefined;
   await app.submit('clear'); await app.submit('projects');
   assert.match(out(), /No projects listed yet/, 'a removed payload empties the section');
   assert.equal(app.context.SITE.projects.length, 0);
   await app.submit('about'); assert.equal(posthog.reloads, 4, 'other commands do not poll');
 });
 
-test('a flag absent from a real PostHog answer is off, but silence from PostHog fails open', async () => {
-  // PostHog answered (other flags present) without terminal-projects: it was deactivated or deleted.
-  const answered = fakePostHog({ flags: { 'terminal-blog': true, 'terminal-funding': true }, payloads: goodPayloads() });
-  const off = terminal({ posthog: answered });
-  await off.submit('projects');
-  assert.match(off.nodes['#output'].textContent, /Projects are switched off/);
-  // No flags at all: the request failed or was blocked, so the section stays on (and empty without a payload).
-  const silent = fakePostHog();
-  const open = terminal({ posthog: silent });
-  await open.submit('projects');
-  assert.match(open.nodes['#output'].textContent, /No projects listed yet/);
-  assert.doesNotMatch(open.nodes['#output'].textContent, /switched off/);
+test('late PostHog answers still apply to later commands', async () => {
+  const posthog = fakePostHog({ auto: false });
+  const app = terminal({ posthog });
+  app.timers.forEach(fn => fn());
+  assert.equal(app.context.window.terminalRemote.settled, true);
+  assert.equal(app.context.SITE.projects.length, 0);
+  posthog.config = goodConfig();
+  posthog.fire();
+  assert.equal(app.context.SITE.projects.length, 1, 'an unprompted answer is applied');
 });
 
 const buildInfo = {
