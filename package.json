@@ -6,9 +6,12 @@
     "dev": "node scripts/version.js && python3 -m http.server ${PORT:-5173} --directory dist",
     "start": "node scripts/version.js && python3 -m http.server ${PORT:-5173} --directory dist",
     "build:version": "node scripts/version.js",
-    "check": "node --check scripts/version.js && node --check dist/terminal.js && node --check dist/content.js && node --check dist/theme.js && node --check dist/markdown.js && node --check dist/analytics.js && node --check dist/remote.js",
-    "test": "node --test tests/theme.test.cjs",
+    "check": "node scripts/check.js",
+    "test": "node --test --test-timeout=10000 tests/theme.test.cjs",
     "test:e2e": "node --test tests/browser.test.cjs",
     "deploy": "npm run check && npm test && npm run build:version && npx wrangler deploy"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

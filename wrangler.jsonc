@@ -4,6 +4,8 @@
   "assets": { "directory": "./dist" },
   "workers_dev": true,
   "preview_urls": true,
+  // Required by `wrangler preview` (non-production branch builds); settings stay top-level.
+  "previews": {},
   "routes": [
     { "pattern": "adamgd.dev", "custom_domain": true }
   ],

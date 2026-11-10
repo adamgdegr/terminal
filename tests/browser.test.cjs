@@ -9,6 +9,8 @@ const { join, resolve, extname } = require('node:path');
 
 // A real browser without an npm dependency. CHROME_BIN supports CI/Linux installs.
 const chrome = process.env.CHROME_BIN || ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/chromium', '/usr/bin/google-chrome'].find(existsSync);
+// GitHub's Ubuntu runners block Chrome's user-namespace sandbox; the page under test is local and trusted.
+const sandbox = process.env.CI ? ['--no-sandbox'] : [];
 async function browserFlow() {
   const assert = (condition, message) => { if (!condition) throw Error(message); };
   const input = document.querySelector('#command-input');
@@ -208,7 +210,7 @@ test('blog reader works in desktop and mobile Chromium', { timeout: 60000 }, asy
           capture.push('--screenshot=' + resolve(process.env.SCREENSHOT_DIR, 'markdown-' + size.replace(',', 'x') + '.png'));
         }
         const output = await new Promise((resolve, reject) => {
-          const child = spawn(chrome, ['--headless', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--user-data-dir=' + profile, '--window-size=' + size, '--force-device-scale-factor=1', '--dump-dom', '--timeout=10000', '--virtual-time-budget=10000', ...capture, url + '/?width=' + size.split(',')[0] + '&height=' + size.split(',')[1]]);
+          const child = spawn(chrome, [...sandbox, '--headless', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--user-data-dir=' + profile, '--window-size=' + size, '--force-device-scale-factor=1', '--dump-dom', '--timeout=10000', '--virtual-time-budget=10000', ...capture, url + '/?width=' + size.split(',')[0] + '&height=' + size.split(',')[1]]);
           let stdout = ''; let stderr = '';
           const timer = setTimeout(() => { child.kill('SIGKILL'); reject(Error('Browser timed out')); }, 20000);
           child.stdout.on('data', bytes => stdout += bytes);
