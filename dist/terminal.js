@@ -302,7 +302,7 @@ async function run(raw, source='typed'){
  };
  const heading = text => result.append(el('h2',text));
  if(remoteBacked.includes(name) && window.terminalRemote?.live){
-   // Re-check PostHog on every use so flag and payload edits apply without a reload.
+   // Re-check PostHog on every use so payload edits apply without a reload.
    const loading=el('p','Loading…','muted'); loading.setAttribute('role','status'); result.append(loading);
    try { await window.terminalRemote.refresh(); } catch { /* Fall back to the last known values. */ }
    loading.remove();
